@@ -68,7 +68,7 @@ func uploadMain(args []string) {
 	var wg sync.WaitGroup
 	var jobFileChannel = make(chan string, 3)
 	var jobResultChannel = make(chan Files, len(args))
-	
+
 	// Start the worker for to validate the files
 	for i := 0; i < MaxNumOfWorkers; i++ {
 		wg.Add(1)
