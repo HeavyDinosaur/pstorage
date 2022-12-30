@@ -40,6 +40,7 @@ var (
 )
 
 var apiKey string
+var errorChannel = make(chan error)
 
 const MaxNumOfWorkers = 3
 
@@ -69,6 +70,7 @@ func uploadMain(args []string) {
 	var jobFileChannel = make(chan string, 3)
 	var jobResultChannel = make(chan Files, len(args))
 
+	go logError(errorChannel)
 	// Start the worker for to validate the files
 	for i := 0; i < MaxNumOfWorkers; i++ {
 		wg.Add(1)
@@ -81,9 +83,9 @@ func uploadMain(args []string) {
 
 	// Close the jobFileChannel since we have finished sending the jobs
 	close(jobFileChannel)
-	// Wait for the valide jobs to complete
+	// Wait for validate jobs to complete
 	wg.Wait()
-	// Close the jobResultChannel since we have recieved all the results from the results
+	// Close the jobResultChannel since we have recieved all the uploadedResults from the uploadedResults
 	close(jobResultChannel)
 
 	var uploadResultChannel = make(chan Files, len(args))
@@ -103,54 +105,55 @@ func uploadMain(args []string) {
 	wg.Wait()
 	// Close the uploadResultChannel since we have received all responses
 	close(uploadResultChannel)
+	close(errorChannel)
 	var finalResult []Files
-	for results := range uploadResultChannel {
-		finalResult = append(finalResult, results)
+	for uploadedResults := range uploadResultChannel {
+		finalResult = append(finalResult, uploadedResults)
 	}
 
-	for _, p := range finalResult {
+	for _, results := range finalResult {
+		if results != (Files{}) {
+			var printList = list.NewWriter()
+			if originalUrl {
+				printList.AppendItem("Original URL")
+				printList.Indent()
+				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "original")})
+				printList.UnIndent()
+			}
+			if largeUrl {
+				printList.AppendItem("Large URL")
+				printList.Indent()
+				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "large")})
+				printList.UnIndent()
+			}
+			if mediumUrl {
+				printList.AppendItem("Medium URL")
+				printList.Indent()
+				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "medium")})
+				printList.UnIndent()
+			}
+			if thumbUrl {
+				printList.AppendItem("Thumb URL")
+				printList.Indent()
+				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "thumb")})
+				printList.UnIndent()
+			}
 
-		var printList = list.NewWriter()
-
-		if originalUrl {
-			printList.AppendItem("Original URL")
-			printList.Indent()
-			printList.AppendItems([]interface{}{urlRenamer(p.UploadResult.Url, "original")})
-			printList.UnIndent()
+			if !originalUrl && !largeUrl && !mediumUrl && !thumbUrl {
+				printList.AppendItem("URL Viewer")
+				printList.Indent()
+				printList.AppendItems([]interface{}{results.UploadResult.UrlViewer})
+				printList.UnIndent()
+			}
+			prettyPrint(results.FilePath, printList.Render())
 		}
-		if largeUrl {
-			printList.AppendItem("Large URL")
-			printList.Indent()
-			printList.AppendItems([]interface{}{urlRenamer(p.UploadResult.Url, "large")})
-			printList.UnIndent()
-		}
-		if mediumUrl {
-			printList.AppendItem("Medium URL")
-			printList.Indent()
-			printList.AppendItems([]interface{}{urlRenamer(p.UploadResult.Url, "medium")})
-			printList.UnIndent()
-		}
-		if thumbUrl {
-			printList.AppendItem("Thumb URL")
-			printList.Indent()
-			printList.AppendItems([]interface{}{urlRenamer(p.UploadResult.Url, "thumb")})
-			printList.UnIndent()
-		}
-
-		if !originalUrl && !largeUrl && !mediumUrl && !thumbUrl {
-			printList.AppendItem("URL Viewer")
-			printList.Indent()
-			printList.AppendItems([]interface{}{p.UploadResult.UrlViewer})
-			printList.UnIndent()
-		}
-		prettyPrint(p.FilePath, printList.Render())
 	}
 
 }
 
 func logError(fileError <-chan error) {
 	for err := range fileError {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
@@ -165,11 +168,7 @@ func worker(wg *sync.WaitGroup, jobFileChannel <-chan string, jobResultChannel c
 func uploadWorker(wg *sync.WaitGroup, uploadFileChannel <-chan Files, uploadResultChannel chan Files) {
 	defer wg.Done()
 	for job := range uploadFileChannel {
-		if job.Error != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", job.Error)
-			//uploadResultChannel <- Files{FilePath: job.FilePath, Error: job.Error}
-		} else {
-			//uploadResultChannel <- Files{FilePath: job.FilePath}
+		if job != (Files{}) {
 			uploadResultChannel <- uploadFile(job.FilePath)
 		}
 	}
@@ -182,11 +181,14 @@ func validateFile(file string) Files {
 	fileInfo, err := os.Stat(file)
 	// If cannot find file return error
 	if err != nil {
-		return Files{FilePath: file, Error: err}
+		errorChannel <- err
+		return Files{}
 	}
 	// If provided file is a directory, return error
 	if fileInfo.IsDir() {
-		return Files{FilePath: file, Error: fmt.Errorf("%s : only files are allowed\n", file)}
+		errorChannel <- fmt.Errorf("%s : only files are allowed", file)
+		return Files{}
+
 		// If it is a file continue
 	} else {
 		// Check for valid image file extension
@@ -197,7 +199,8 @@ func validateFile(file string) Files {
 				fOpen, err := os.Open(file)
 				// If you cant open file to read, throw error
 				if err != nil {
-					return Files{FilePath: file, Error: err}
+					errorChannel <- err
+					return Files{}
 				}
 				// Close the file
 				fOpen.Close()
@@ -206,8 +209,8 @@ func validateFile(file string) Files {
 
 			} else {
 				// File is invalid, hence return an error
-				return Files{FilePath: file, Error: fmt.Errorf("%s : invalid file extension. allowed extensions %s\n", file, validImageExtensions)}
-
+				errorChannel <- fmt.Errorf("%s : invalid file extension. allowed extensions %s", file, validImageExtensions)
+				return Files{}
 			}
 		}
 		return validatedFiles
@@ -223,12 +226,18 @@ func uploadFile(file string) Files {
 
 	resp, err := http.Post(apiUrl, "application/json", bytes.NewReader(toJson))
 	if err != nil {
-		return Files{FilePath: file, Error: err}
+		errorChannel <- err
+		return Files{}
 	}
+
 	defer resp.Body.Close()
 	var uploadResponse UploadResponse
 	json.NewDecoder(resp.Body).Decode(&uploadResponse)
 
+	if uploadResponse.Status != http.StatusOK {
+		errorChannel <- fmt.Errorf("error uploading %s : %s", file, uploadResponse.Message)
+		return Files{}
+	}
 	return Files{FilePath: file, UploadResult: uploadResponse}
 }
 
@@ -243,6 +252,5 @@ func prettyPrint(title string, content string) {
 
 func urlRenamer(url string, posterSize string) string {
 	urlParsed, _ := url2.ParseRequestURI(url)
-
 	return strings.Replace(urlParsed.String(), "original", posterSize, 1)
 }
