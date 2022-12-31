@@ -80,46 +80,42 @@ func uploadMain(args []string) {
 	// Close the uploadResultChannel since we have received all responses
 	close(uploadResultChannel)
 	close(errorChannel)
-	var finalResult []Files
+	
 	for uploadedResults := range uploadResultChannel {
-		finalResult = append(finalResult, uploadedResults)
-	}
-
-	for _, results := range finalResult {
-		if results != (Files{}) {
+		if uploadedResults != (Files{}) {
 			var printList = list.NewWriter()
 			if originalUrl {
 				printList.AppendItem("Original URL")
 				printList.Indent()
-				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "original")})
+				printList.AppendItems([]interface{}{urlRenamer(uploadedResults.UploadResult.Url, "original")})
 				printList.UnIndent()
 			}
 			if largeUrl {
 				printList.AppendItem("Large URL")
 				printList.Indent()
-				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "large")})
+				printList.AppendItems([]interface{}{urlRenamer(uploadedResults.UploadResult.Url, "large")})
 				printList.UnIndent()
 			}
 			if mediumUrl {
 				printList.AppendItem("Medium URL")
 				printList.Indent()
-				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "medium")})
+				printList.AppendItems([]interface{}{urlRenamer(uploadedResults.UploadResult.Url, "medium")})
 				printList.UnIndent()
 			}
 			if thumbUrl {
 				printList.AppendItem("Thumb URL")
 				printList.Indent()
-				printList.AppendItems([]interface{}{urlRenamer(results.UploadResult.Url, "thumb")})
+				printList.AppendItems([]interface{}{urlRenamer(uploadedResults.UploadResult.Url, "thumb")})
 				printList.UnIndent()
 			}
 
 			if !originalUrl && !largeUrl && !mediumUrl && !thumbUrl {
 				printList.AppendItem("URL Viewer")
 				printList.Indent()
-				printList.AppendItems([]interface{}{results.UploadResult.UrlViewer})
+				printList.AppendItems([]interface{}{uploadedResults.UploadResult.UrlViewer})
 				printList.UnIndent()
 			}
-			prettyPrint(results.FilePath, printList.Render())
+			prettyPrint(uploadedResults.FilePath, printList.Render())
 		}
 	}
 
