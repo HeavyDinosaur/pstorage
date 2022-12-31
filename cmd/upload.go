@@ -80,7 +80,7 @@ func uploadMain(args []string) {
 	// Close the uploadResultChannel since we have received all responses
 	close(uploadResultChannel)
 	close(errorChannel)
-	
+
 	for uploadedResults := range uploadResultChannel {
 		if uploadedResults != (Files{}) {
 			var printList = list.NewWriter()

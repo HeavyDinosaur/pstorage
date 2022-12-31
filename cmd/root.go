@@ -15,7 +15,7 @@ import (
 var cfgFile string
 var apiKey string
 
-const VERSION string = "0.0.1"
+const VERSION string = "0.0.4"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
