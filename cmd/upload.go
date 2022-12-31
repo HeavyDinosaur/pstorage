@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/jedib0t/go-pretty/v6/list"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"net/http"
 	url2 "net/url"
 	"os"
@@ -19,39 +18,14 @@ import (
 	"sync"
 )
 
-type Files struct {
-	FilePath     string
-	Type         string
-	Error        error
-	UploadResult UploadResponse
-}
-
-type UploadFile struct {
-	Key      string `json:"key"`
-	Filename string `json:"filename"`
-	Source   string `json:"source"`
-}
-
-var (
-	originalUrl bool
-	largeUrl    bool
-	mediumUrl   bool
-	thumbUrl    bool
-)
-
-var apiKey string
-var errorChannel = make(chan error)
-
-const MaxNumOfWorkers = 3
-
 // uploadCmd represents the upload command
 var uploadCmd = &cobra.Command{
 	Use:          "upload",
 	Short:        "Upload images",
+	Example:      "pstorage upload file dir/files dir/* --thumb",
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		apiKey = viper.GetString("api-key")
 		uploadMain(args)
 	},
 }
@@ -71,10 +45,10 @@ func uploadMain(args []string) {
 	var jobResultChannel = make(chan Files, len(args))
 
 	go logError(errorChannel)
-	// Start the worker for to validate the files
+	// Start the validateWorker for to validate the files
 	for i := 0; i < MaxNumOfWorkers; i++ {
 		wg.Add(1)
-		go worker(&wg, jobFileChannel, jobResultChannel)
+		go validateWorker(&wg, jobFileChannel, jobResultChannel)
 	}
 	// Send the jobs to start validating the files
 	for _, job := range args {
@@ -91,12 +65,12 @@ func uploadMain(args []string) {
 	var uploadResultChannel = make(chan Files, len(args))
 
 	var uploadFileChannel = make(chan Files, len(jobResultChannel))
-	// Now start the upload worker
+	// Now start the upload validateWorker
 	for i := 0; i < MaxNumOfWorkers; i++ {
 		wg.Add(1)
 		go uploadWorker(&wg, uploadFileChannel, uploadResultChannel)
 	}
-	// Send the jobs to the upload worker
+	// Send the jobs to the upload validateWorker
 	for job := range jobResultChannel {
 		uploadFileChannel <- job
 	}
@@ -151,13 +125,7 @@ func uploadMain(args []string) {
 
 }
 
-func logError(fileError <-chan error) {
-	for err := range fileError {
-		fmt.Fprintln(os.Stderr, err)
-	}
-}
-
-func worker(wg *sync.WaitGroup, jobFileChannel <-chan string, jobResultChannel chan Files) {
+func validateWorker(wg *sync.WaitGroup, jobFileChannel <-chan string, jobResultChannel chan Files) {
 	defer wg.Done()
 	for job := range jobFileChannel {
 		jobResultChannel <- validateFile(job)
@@ -182,6 +150,7 @@ func validateFile(file string) Files {
 	// If cannot find file return error
 	if err != nil {
 		errorChannel <- err
+
 		return Files{}
 	}
 	// If provided file is a directory, return error

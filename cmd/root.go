@@ -13,6 +13,7 @@ import (
 )
 
 var cfgFile string
+var apiKey string
 
 const VERSION string = "0.0.1"
 
@@ -22,7 +23,8 @@ var rootCmd = &cobra.Command{
 	Short:   "This is an api client to upload files to pstorage\n",
 	Version: VERSION,
 	Example: fmt.Sprintf("pstorage upload file dir/files dir/* --thumb \n" +
-		"pstorage --config <CUSTOM CONFIG FILE> upload file dir/files dir/*"),
+		"pstorage --config <CUSTOM CONFIG FILE> upload file dir/files dir/* \n" +
+		"pstorage url https://url.com/image.jpeg https://url2.com/image.png"),
 }
 
 func Execute() {
@@ -71,4 +73,6 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
+
+	apiKey = viper.GetString("api-key")
 }
